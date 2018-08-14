@@ -2,7 +2,6 @@ package com.robert.elastic;
 import java.io.FileReader;
 import java.util.Iterator;
 import java.util.Map;
-import java.io.PrintWriter;
 
 import org.apache.http.HttpHost;
 import org.elasticsearch.action.index.IndexRequest;
@@ -22,7 +21,9 @@ public class App
 {
     public static void main( String[] args ) throws Exception
     {
-        RestHighLevelClient client = new RestHighLevelClient(
+
+        //create Elasticsearch client with resthighlevelclient
+        RestHighLevelClient es_client = new RestHighLevelClient(
                 RestClient.builder(
                         new HttpHost("localhost", 9200, "http")));
 
@@ -38,9 +39,6 @@ public class App
         //iterate over the json authority array
         JSONArray auth = (JSONArray) jo_input.get("Authorities");
         Iterator authIterator = auth.iterator();
-
-
-        //PrintWriter pw = new PrintWriter("JSONExample.json");
 
 
         while (authIterator.hasNext())
@@ -61,24 +59,15 @@ public class App
                 }
             }
 
-            /*Index parsed json object to elastic search*/
+            //Index parsed json object to elastic search
             IndexRequest request = new IndexRequest("authority_index_test", "_doc");
             request.source(jo_output, XContentType.JSON);
-            client.index(request);
-
-            //for writing to local file
-            /*pw.write(jo_output.toJSONString());
-            if(authIterator.hasNext()) {
-                pw.write(", \n");
-            }
-            pw.flush();*/
+            es_client.index(request);
 
         }
 
-        //pw.close();
-
-        //close client connection
-        client.close();
+        //close es_client connection
+        es_client.close();
 
 
 
