@@ -4,9 +4,12 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.apache.http.HttpHost;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -35,17 +38,20 @@ public class App
 
         //object for parsed json objects
         JSONObject jo_output = new JSONObject();
+        JSONArray jo_out_array = new JSONArray();
 
         //iterate over the json authority array
         JSONArray auth = (JSONArray) jo_input.get("Authorities");
         Iterator authIterator = auth.iterator();
 
 
+        BulkRequest request = new BulkRequest();
+        request.timeout(TimeValue.timeValueMinutes(1));
+
         while (authIterator.hasNext())
         {
             Iterator<Map.Entry> itr1 = ((Map) authIterator.next()).entrySet().iterator();
 
-            //Map m = new LinkedHashMap();
             while (itr1.hasNext()) {
                 Map.Entry pair = itr1.next();
                 if(pair.getKey().equals("AuthorityType")){
@@ -59,12 +65,20 @@ public class App
                 }
             }
 
-            //Index parsed json object to elastic search
-            IndexRequest request = new IndexRequest("authority_index_test", "_doc");
-            request.source(jo_output, XContentType.JSON);
-            es_client.index(request);
+            request.add(new IndexRequest("authority_index_test", "_doc")
+                    .source(jo_output, XContentType.JSON));
+
+                /*
+                //Index parsed json object to elastic search
+                IndexRequest request = new IndexRequest("authority_index_test", "_doc");
+                request.source(jo_output, XContentType.JSON);
+                es_client.index(request);
+                */
 
         }
+
+
+        BulkResponse bulkResponse = es_client.bulk(request);
 
         //close es_client connection
         es_client.close();
