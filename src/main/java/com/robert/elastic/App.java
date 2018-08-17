@@ -1,9 +1,10 @@
 package com.robert.elastic;
 import java.io.File;
 import java.io.FileReader;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.http.HttpHost;
 import org.elasticsearch.action.bulk.BulkRequest;
@@ -31,16 +32,19 @@ import org.json.simple.parser.*;
  */
 public class App
 {
-
+    //target directory
     static final File folder = new File("C:/Users/robert.voit/Documents/Programming/Elastic/collections/bulk json/multiParse");
+    //number of total threads allowed
+    static final int thread_count = 2;
 
     /**Get array of filenames*/
-    public static LinkedList<String> listFilesForFolder(final File folder)
+    private static LinkedList<String> listFilesForFolder(final File folder)
     {
         LinkedList<String> files= new LinkedList<String>();
 
         for (final File fileEntry : folder.listFiles()) {
-            files.add(fileEntry.getName());
+            files.add(folder + "/"+ fileEntry.getName());
+            //System.out.println(fileEntry.getName());
         }
         return files;
     }
@@ -48,72 +52,110 @@ public class App
     /**Parse each JSON file in directory, post the contents of each file to ES with bulk API*/
     public static void main( String[] args ) throws Exception
     {
+        //tracking runtime of program
+        long startTime = System.currentTimeMillis();
 
         //create Elasticsearch client with resthighlevelclient
-        RestHighLevelClient es_client = new RestHighLevelClient(
+        final RestHighLevelClient es_client = new RestHighLevelClient(
                 RestClient.builder(
                         new HttpHost("localhost", 9200, "http")));
 
-        LinkedList<String> files = listFilesForFolder(folder);
+        //create queue of all files in selected directory
+        final Queue<String> files_queue = listFilesForFolder(folder);
 
-        //for each file in directory
-        for(String current_file: files) {
+        //executor service for handling execution of threads. Only allows a specific number of threads to run at once
+        ExecutorService pool = Executors.newFixedThreadPool(thread_count);
 
-            // parsing file "with json objects"
-            Object obj = new JSONParser().parse(new FileReader(folder+ "/" +current_file));
+        //for loop to create specified number of threads
+        for(int i = 1; i <=thread_count; i++)
+        {
+            //create new thread and define its runnable method
+            Runnable running_thread = new Runnable(){
+                public void run() {
+                    try {
+                        String current_file_path;
+                        //remove files from the queue and run a new thread on each file until the queue is empty
+                        while ((current_file_path = files_queue.poll()) != null) {
 
-            // typecasting obj to JSONObject
-            JSONObject jo_input = (JSONObject) obj;
+                            System.out.println("Thread " + Thread.currentThread().getId() + " is running on file: " + current_file_path);
 
-            //object for parsed json objects
-            JSONObject jo_output = new JSONObject();
+                            // parsing file into json objects
+                            JSONObject jo_input = (JSONObject) new JSONParser().parse(new FileReader(current_file_path));
 
-            //iterate over the json authority array
-            JSONArray auth = (JSONArray) jo_input.get("Authorities");
-            Iterator authIterator = auth.iterator();
+                            //object for parsed json objects
+                            JSONObject jo_output = new JSONObject();
 
+                            //iterate over the json authority array
+                            JSONArray auth = (JSONArray) jo_input.get("Authorities");
+                            Iterator authIterator = auth.iterator();
 
-            //Create bulk api request for ES, timeout if it takes too long
-            BulkRequest request = new BulkRequest();
-            request.timeout(TimeValue.timeValueMinutes(1));
+                            //Create bulk api request for ES, timeout if it takes too long
+                            BulkRequest request = new BulkRequest();
+                            request.timeout(TimeValue.timeValueMinutes(1));
 
-            while (authIterator.hasNext()) {
-                Iterator<Map.Entry> itr1 = ((Map) authIterator.next()).entrySet().iterator();
+                            //loop to iterate over each authority in the authority array
+                            while (authIterator.hasNext()) {
 
-                while (itr1.hasNext()) {
-                    Map.Entry pair = itr1.next();
-                    if (pair.getKey().equals("AuthorityType")) {
-                        continue;
-                    } else if (pair.getKey().equals("AuthorityTypeText")) {
-                        jo_output.put("AuthorityType", pair.getValue());
-                    } else {
-                        jo_output.put(pair.getKey(), pair.getValue());
+                                //iterator for current authority
+                                Iterator<Map.Entry> itr1 = ((Map) authIterator.next()).entrySet().iterator();
+
+                                //parse the current authority into a JSON object
+                                while (itr1.hasNext()) {
+                                    Map.Entry pair = itr1.next();
+                                    if (pair.getKey().equals("AuthorityType")) {
+                                        continue;
+                                    } else if (pair.getKey().equals("AuthorityTypeText")) {
+                                        jo_output.put("AuthorityType", pair.getValue());
+                                    } else {
+                                        jo_output.put(pair.getKey(), pair.getValue());
+                                    }
+                                }
+                                //System.out.println ("Reading: "+current_file_path);
+                                //System.out.println(jo_output.toString());
+
+                                //create bulk api request by adding the current JSON object one at a time
+                                request.add(new IndexRequest("authority_index_test", "_doc")
+                                        .source(jo_output, XContentType.JSON));
+
+                                /*
+                                //Index parsed json object to elastic search (no bulk API)
+                                IndexRequest request = new IndexRequest("authority_index_test", "_doc");
+                                request.source(jo_output, XContentType.JSON);
+                                es_client.index(request);
+                                */
+                            }
+
+                            //Process Bulk API request after the file has been fully parsed
+                            BulkResponse bulkResponse = es_client.bulk(request);
+                            System.out.println("Thread " + Thread.currentThread().getId() + " has sent final bulk request.");
+                        }
+                        if(files_queue.poll() == null){
+                            System.out.println("Timeout...");
+                        }
+                    }
+                    catch (Exception e) {
+                        // Create better exception handling later
+                        System.out.println("Exception in thread" + Thread.currentThread().getId() + " is caught: " + e);
                     }
                 }
-
-                //System.out.println(jo_output.toString());
-
-
-                //build bulk api request one object at a time
-                request.add(new IndexRequest("authority_index_test", "_doc")
-                    .source(jo_output, XContentType.JSON));
-
-
-                /*
-                //Index parsed json object to elastic search (no bulk API)
-                IndexRequest request = new IndexRequest("authority_index_test", "_doc");
-                request.source(jo_output, XContentType.JSON);
-                es_client.index(request);
-                */
-
-            }
-
-            //Process Bulk API indexing
-            BulkResponse bulkResponse = es_client.bulk(request);
-
+            };
+            //execute thread pool
+            pool.execute(running_thread);
         }
-        //close es_client connection
+
+
+        System.out.println("Waiting for responses to finish...");
+        //wait for all threads to finish
+        pool.awaitTermination(20000,TimeUnit.MILLISECONDS);
+
+        long stopTime = System.currentTimeMillis();
+        long elapsedTime = stopTime - startTime;
+
+        System.out.println("Finished in: "+ elapsedTime);
+
+        //close es_client connection after threads are done executing
         es_client.close();
+        System.out.println("Client Closed.");
 
     }
 }
