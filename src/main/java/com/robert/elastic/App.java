@@ -20,20 +20,19 @@ import org.json.simple.parser.*;
 
 
 /**
- * Java high level rest api test
+ * Java high level rest api authority parser
  *
- *
- * Not the most efficient at the moment (triple nested loop)
+ * Running this will POST the parsed contents of all JSON files in specified directory
+ * into local ES cluster
  *
  * Future modifications:
- * -see if I can add multiple threads, 1 file processed per thread (not needed for local machine)
- * -Consider removing innermost loop to process JSON differently
  * -Test this against more verbose examples
+ *
  */
 public class App
 {
     //target directory
-    static final File folder = new File("C:/Users/robert.voit/Documents/Programming/Elastic/collections/bulk json/multiParse");
+    static final File folder = new File("C:/Users/robert.voit/Documents/Programming/Elastic/online resourse json/sample");
     //number of total threads allowed
     static final int thread_count = 2;
 
@@ -55,13 +54,16 @@ public class App
         //tracking runtime of program
         long startTime = System.currentTimeMillis();
 
+        System.out.println("Loading files from: " + folder);
+        System.out.println("Starting ElasticSearch indexing process...");
+
+        //create queue of all files in selected directory
+        final Queue<String> files_queue = listFilesForFolder(folder);
+
         //create Elasticsearch client with resthighlevelclient
         final RestHighLevelClient es_client = new RestHighLevelClient(
                 RestClient.builder(
                         new HttpHost("localhost", 9200, "http")));
-
-        //create queue of all files in selected directory
-        final Queue<String> files_queue = listFilesForFolder(folder);
 
         //executor service for handling execution of threads. Only allows a specific number of threads to run at once
         ExecutorService pool = Executors.newFixedThreadPool(thread_count);
@@ -111,6 +113,7 @@ public class App
                                     }
                                 }
                                 //System.out.println ("Reading: "+current_file_path);
+                                //System.out.println("Thread " + Thread.currentThread().getId() + " is running");
                                 //System.out.println(jo_output.toString());
 
                                 //create bulk api request by adding the current JSON object one at a time
@@ -129,9 +132,6 @@ public class App
                             BulkResponse bulkResponse = es_client.bulk(request);
                             System.out.println("Thread " + Thread.currentThread().getId() + " has sent final bulk request.");
                         }
-                        if(files_queue.poll() == null){
-                            System.out.println("Timeout...");
-                        }
                     }
                     catch (Exception e) {
                         // Create better exception handling later
@@ -143,19 +143,22 @@ public class App
             pool.execute(running_thread);
         }
 
+        //shutdown executor pool
+        pool.shutdown();
 
-        System.out.println("Waiting for responses to finish...");
-        //wait for all threads to finish
-        pool.awaitTermination(20000,TimeUnit.MILLISECONDS);
-
-        long stopTime = System.currentTimeMillis();
-        long elapsedTime = stopTime - startTime;
-
-        System.out.println("Finished in: "+ elapsedTime);
+        //System.out.println("Waiting for responses to finish...");
+        //wait for all threads to finish or force timeout
+        pool.awaitTermination(15,TimeUnit.MINUTES);
 
         //close es_client connection after threads are done executing
         es_client.close();
         System.out.println("Client Closed.");
+
+        long stopTime = System.currentTimeMillis();
+        long elapsedTime = (stopTime - startTime)/1000;
+
+        //print total elapsed time
+        System.out.println("Finished in: "+ elapsedTime +" seconds.");
 
     }
 }
