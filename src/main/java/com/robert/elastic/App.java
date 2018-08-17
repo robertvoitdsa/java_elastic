@@ -27,7 +27,7 @@ import org.json.simple.parser.*;
  *
  * Future modifications:
  * -Test this against more verbose examples
- *
+ * -improve exception handling
  */
 public class App
 {
@@ -77,8 +77,8 @@ public class App
                     try {
                         String current_file_path;
                         //remove files from the queue and run a new thread on each file until the queue is empty
-                        while ((current_file_path = files_queue.poll()) != null) {
-
+                        while ((current_file_path = files_queue.poll()) != null)
+                        {
                             System.out.println("Thread " + Thread.currentThread().getId() + " is running on file: " + current_file_path);
 
                             // parsing file into json objects
@@ -96,29 +96,36 @@ public class App
                             request.timeout(TimeValue.timeValueMinutes(1));
 
                             //loop to iterate over each authority in the authority array
-                            while (authIterator.hasNext()) {
-
+                            while (authIterator.hasNext())
+                            {
                                 //iterator for current authority
                                 Iterator<Map.Entry> itr1 = ((Map) authIterator.next()).entrySet().iterator();
 
                                 //parse the current authority into a JSON object
-                                while (itr1.hasNext()) {
+                                while (itr1.hasNext())
+                                {
                                     Map.Entry pair = itr1.next();
-                                    if (pair.getKey().equals("AuthorityType")) {
+                                    if (pair.getKey().equals("AuthorityType"))
+                                    {
                                         continue;
-                                    } else if (pair.getKey().equals("AuthorityTypeText")) {
+                                    }
+                                    else if (pair.getKey().equals("AuthorityTypeText"))
+                                    {
                                         jo_output.put("AuthorityType", pair.getValue());
-                                    } else {
+                                    }
+                                    else
+                                    {
                                         jo_output.put(pair.getKey(), pair.getValue());
                                     }
                                 }
-                                //System.out.println ("Reading: "+current_file_path);
-                                //System.out.println("Thread " + Thread.currentThread().getId() + " is running");
-                                //System.out.println(jo_output.toString());
 
                                 //create bulk api request by adding the current JSON object one at a time
                                 request.add(new IndexRequest("authority_index_test", "_doc")
                                         .source(jo_output, XContentType.JSON));
+
+                                //System.out.println ("Reading: "+current_file_path);
+                                //System.out.println("Thread " + Thread.currentThread().getId() + " is running");
+                                //System.out.println(jo_output.toString());
 
                                 /*
                                 //Index parsed json object to elastic search (no bulk API)
@@ -133,7 +140,8 @@ public class App
                             System.out.println("Thread " + Thread.currentThread().getId() + " has sent final bulk request.");
                         }
                     }
-                    catch (Exception e) {
+                    catch (Exception e)
+                    {
                         // Create better exception handling later
                         System.out.println("Exception in thread" + Thread.currentThread().getId() + " is caught: " + e);
                     }
